@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="SmartCart logo">
+  <rect x="16" y="16" width="480" height="480" rx="128" fill="#174a3a"/>
+  <path d="M114 142h50l28 43h176l-30 134c-3 14-15 24-29 24H214c-14 0-26-9-30-23l-35-139h-35z" fill="none" stroke="#f8f4eb" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="222" cy="389" r="17" fill="#f8f4eb"/><circle cx="318" cy="389" r="17" fill="#f8f4eb"/>
+  <path d="M255 113c36-39 81-38 103-27-5 41-35 75-83 77-19 1-35-5-45-15 9-13 16-24 25-35z" fill="#d8b874"/>
+  <path d="M228 161c23-24 51-44 85-62" fill="none" stroke="#174a3a" stroke-width="9" stroke-linecap="round"/>
+</svg>

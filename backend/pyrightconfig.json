@@ -1,0 +1,8 @@
+{
+  "include": ["."],
+  "exclude": [".venv", "db.sqlite3", "frontend_dist", "**/__pycache__"],
+  "pythonVersion": "3.12",
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["."]
+}
