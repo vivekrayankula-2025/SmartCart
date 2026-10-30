@@ -1,3 +1,4 @@
+
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { Link, Navigate, useLocation, useSearchParams } from "react-router-dom";
@@ -8,64 +9,122 @@ import { errorMessage } from "../services/api";
 const LOGIN_ROLES = [
   { key: "customer", label: "Customer" },
   { key: "seller", label: "Seller" },
-  { key: "management", label: "Management" },
+  { key: "management", label: "Admin" },
 ];
-const REGISTER_ROLES = LOGIN_ROLES.filter(({ key }) => key !== "management");
-const ROLE_HOME = { customer: "/", seller: "/seller", management: "/management" };
+
+const REGISTER_ROLES = LOGIN_ROLES.filter(
+  ({ key }) => key !== "management"
+);
+
+const ROLE_HOME = {
+  customer: "/",
+  seller: "/seller",
+  management: "/admin",
+};
 
 export default function AuthForm({ mode }) {
   const isRegister = mode === "register";
   const { user, login, register } = useAuth();
   const location = useLocation();
   const [params] = useSearchParams();
+
   const availableRoles = isRegister ? REGISTER_ROLES : LOGIN_ROLES;
   const initialRole = params.get("role");
+
   const [role, setRole] = useState(
-    availableRoles.some((item) => item.key === initialRole) ? initialRole : "customer",
+    availableRoles.some((item) => item.key === initialRole)
+      ? initialRole
+      : "customer"
   );
-  const [form, setForm] = useState({ fullName: "", companyName: "", email: "", password: "" });
+
+  const [form, setForm] = useState({
+    fullName: "",
+    companyName: "",
+    email: "",
+    password: "",
+  });
+
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   if (user) {
-    return <Navigate to={location.state?.from ?? ROLE_HOME[user.role] ?? "/"} replace />;
+    return (
+      <Navigate
+        to={location.state?.from ?? ROLE_HOME[user.role] ?? "/"}
+        replace
+      />
+    );
   }
 
   const isSeller = role === "seller";
-  const roleLabel = LOGIN_ROLES.find((item) => item.key === role)?.label ?? "Customer";
-  const setField = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
+
+  const roleLabel =
+    LOGIN_ROLES.find((item) => item.key === role)?.label ?? "Customer";
+
+  const setField = (field) => (event) =>
+    setForm((current) => ({
+      ...current,
+      [field]: event.target.value,
+    }));
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setBusy(true);
     setError("");
+
     try {
-      if (isRegister) await register({ ...form, role });
-      else await login(form.email, form.password, role);
+      if (isRegister) {
+        await register({ ...form, role });
+      } else {
+        await login(form.email, form.password, role);
+      }
     } catch (err) {
-      setError(errorMessage(err, isRegister ? "Could not create your account." : "Invalid email or password."));
+      setError(
+        errorMessage(
+          err,
+          isRegister
+            ? "Could not create your account."
+            : "Invalid email or password."
+        )
+      );
       setBusy(false);
     }
   };
 
   const heading = isRegister
-    ? isSeller ? "Create a seller account" : "Create your account"
-    : role === "management" ? "Management sign in" : role === "seller" ? "Seller sign in" : "Welcome back";
-  const subheading = role === "management"
-    ? "View company-wide product sales and daily turnover."
-    : role === "seller"
-      ? "Add products, manage your listings, and fulfil orders."
-      : "Shop products, pay securely, and track your deliveries.";
+    ? isSeller
+      ? "Create a seller account"
+      : "Create your account"
+    : role === "management"
+      ? "Admin sign in"
+      : role === "seller"
+        ? "Seller sign in"
+        : "Welcome back";
+
+  const subheading =
+    role === "management"
+      ? "Manage products, users, orders and company-wide reports."
+      : role === "seller"
+        ? "Add products, manage your listings, and fulfil orders."
+        : "Shop products, pay securely, and track your deliveries.";
 
   return (
     <section className="auth-page">
       <form className="auth-card" onSubmit={handleSubmit}>
         <Link className="auth-brand" to="/">
-          <span className="brand-mark"><Sparkles size={16} /></span>
+          <span className="brand-mark">
+            <Sparkles size={16} />
+          </span>
           SmartCart
         </Link>
 
-        <div className={`tabs full-tabs auth-role-tabs ${isRegister ? "two-roles" : "three-roles"}`} role="tablist" aria-label="Account type">
+        <div
+          className={`tabs full-tabs auth-role-tabs ${
+            isRegister ? "two-roles" : "three-roles"
+          }`}
+          role="tablist"
+          aria-label="Account type"
+        >
           {availableRoles.map((item) => (
             <button
               key={item.key}
@@ -88,15 +147,28 @@ export default function AuthForm({ mode }) {
         {isRegister && isSeller && (
           <label>
             Store or seller name
-            <input required value={form.companyName} onChange={setField("companyName")} placeholder="Your shop name" />
+            <input
+              required
+              value={form.companyName}
+              onChange={setField("companyName")}
+              placeholder="Your shop name"
+            />
           </label>
         )}
+
         {isRegister && (
           <label>
             Full name
-            <input required value={form.fullName} onChange={setField("fullName")} placeholder="Your name" autoComplete="name" />
+            <input
+              required
+              value={form.fullName}
+              onChange={setField("fullName")}
+              placeholder="Your name"
+              autoComplete="name"
+            />
           </label>
         )}
+
         <label>
           Email
           <input
@@ -108,6 +180,7 @@ export default function AuthForm({ mode }) {
             autoComplete="email"
           />
         </label>
+
         <label>
           Password
           <input
@@ -120,22 +193,43 @@ export default function AuthForm({ mode }) {
           />
         </label>
 
-        {error && <div className="form-error" role="alert">{error}</div>}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
+
         <button className="btn btn-primary full" disabled={busy}>
-          {busy ? "Please wait…" : isRegister ? `Create ${roleLabel.toLowerCase()} account` : "Sign in"}
+          {busy
+            ? "Please wait…"
+            : isRegister
+              ? `Create ${roleLabel.toLowerCase()} account`
+              : "Sign in"}
         </button>
 
         {role === "management" && !isRegister && (
-          <p className="management-access-note">Management access is created by an authorized administrator; public registration is disabled.</p>
+          <p className="admin-access-note">
+            Admin access is created by an authorized administrator; public
+            registration is disabled.
+          </p>
         )}
 
         <div className="auth-switch">
           {isRegister ? (
-            <>Already have an account? <Link to={`/login?role=${role}`}>Sign in</Link></>
+            <>
+              Already have an account?{" "}
+              <Link to={`/login?role=${role}`}>Sign in</Link>
+            </>
           ) : role === "management" ? (
-            <>Need a customer or seller account? <Link to="/register">Register here</Link></>
+            <>
+              Need a customer or seller account?{" "}
+              <Link to="/register">Register here</Link>
+            </>
           ) : (
-            <>New here? <Link to={`/register?role=${role}`}>Create an account</Link></>
+            <>
+              New here?{" "}
+              <Link to={`/register?role=${role}`}>Create an account</Link>
+            </>
           )}
         </div>
       </form>

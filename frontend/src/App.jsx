@@ -1,3 +1,4 @@
+
 import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 
@@ -18,7 +19,7 @@ import Wishlist from "./pages/Wishlist";
 import { Loader } from "./components/StateMessage";
 
 const SellerDashboard = lazy(() => import("./pages/SellerDashboard"));
-const ManagementDashboard = lazy(() => import("./pages/ManagementDashboard"));
+const AdminDashboard = lazy(() => import("./pages/ManagementDashboard"));
 
 export default function App() {
   return (
@@ -37,8 +38,28 @@ export default function App() {
 
           <Route path="/orders" element={<RequireRole role="customer"><Orders /></RequireRole>} />
           <Route path="/orders/:id" element={<RequireRole role="customer"><OrderDetails /></RequireRole>} />
-          <Route path="/seller" element={<RequireRole role="seller"><Suspense fallback={<Loader label="Loading seller workspace…" />}><SellerDashboard /></Suspense></RequireRole>} />
-          <Route path="/management" element={<RequireRole role="management"><Suspense fallback={<Loader label="Loading company reports…" />}><ManagementDashboard /></Suspense></RequireRole>} />
+
+          <Route
+            path="/seller"
+            element={
+              <RequireRole role="seller">
+                <Suspense fallback={<Loader label="Loading seller workspace..." />}>
+                  <SellerDashboard />
+                </Suspense>
+              </RequireRole>
+            }
+          />
+
+          <Route
+            path="/admin"
+            element={
+              <RequireRole role="management">
+                <Suspense fallback={<Loader label="Loading admin dashboard..." />}>
+                  <AdminDashboard />
+                </Suspense>
+              </RequireRole>
+            }
+          />
 
           <Route path="*" element={<NotFound />} />
         </Routes>

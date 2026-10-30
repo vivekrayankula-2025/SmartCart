@@ -1,0 +1,605 @@
+﻿
+========== backend\catalog\models.py ==========
+
+from decimal import Decimal
+
+from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models
+from django.db.models import F, Q
+
+
+class TimeStampedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class Category(TimeStampedModel):
+    name = models.CharField(max_length=120, unique=True)
+    slug = models.SlugField(max_length=140, unique=True)
+
+    class Meta:
+        verbose_name_plural = "categories"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Brand(TimeStampedModel):
+    name = models.CharField(max_length=120, unique=True)
+    slug = models.SlugField(max_length=140, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Product(TimeStampedModel):
+    name = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="products")
+    brand = models.ForeignKey(Brand, on_delete=models.PROTECT, related_name="products")
+    description = models.TextField(blank=True)
+
+    price = models.DecimalField(
+        max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0"))]
+    )
+    original_price = models.DecimalField(
+        max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0"))]
+    )
+    rating = models.DecimalField(
+        max_digits=2,
+        decimal_places=1,
+        db_default=Decimal("0.0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("5"))],
+    )
+    review_count = models.PositiveIntegerField(db_default=0)
+    stock = models.PositiveIntegerField(db_default=0)
+    image_url = models.URLField(max_length=500, blank=True)
+    is_featured = models.BooleanField(db_default=False)
+    is_active = models.BooleanField(db_default=True)
+    # Company that sells this product. Empty = sold by SmartCart itself.
+    seller = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="listed_products",
+    )
+
+    class Meta:
+        ordering = ["-is_featured", "-rating", "name"]
+        indexes = [
+            models.Index(fields=["category", "-rating"], name="product_cat_rating_idx"),
+            models.Index(fields=["is_featured", "-rating"], name="product_featured_idx"),
+            models.Index(fields=["price"], name="product_price_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(price__lte=F("original_price")),
+                name="product_price_lte_original_price",
+            ),
+            models.CheckConstraint(
+                condition=Q(rating__gte=0) & Q(rating__lte=5),
+                name="product_rating_between_0_and_5",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def discount_percent(self) -> int:
+        if not self.original_price:
+            return 0
+        return round((1 - self.price / self.original_price) * 100)
+
+    @property
+    def in_stock(self) -> bool:
+        return self.stock > 0
+
+    @property
+    def seller_name(self) -> str:
+        if not self.seller_id:
+            return "SmartCart"
+        profile = getattr(self.seller, "profile", None)
+        return (profile.company_name if profile else "") or "Marketplace seller"
+
+========== backend\catalog\serializers.py ==========
+
+from rest_framework import serializers
+
+from .models import Brand, Category, Product
+from .utils import unique_slug
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    product_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Category
+        fields = ("id", "name", "slug", "product_count")
+
+
+class ProductSerializer(serializers.ModelSerializer):
+    """Read-only representation used by the public storefront."""
+
+    category = serializers.CharField(source="category.name", read_only=True)
+    category_slug = serializers.CharField(source="category.slug", read_only=True)
+    brand = serializers.CharField(source="brand.name", read_only=True)
+    discount_percent = serializers.IntegerField(read_only=True)
+    in_stock = serializers.BooleanField(read_only=True)
+    seller_name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Product
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "description",
+            "category",
+            "category_slug",
+            "brand",
+            "seller_name",
+            "price",
+            "original_price",
+            "discount_percent",
+            "rating",
+            "review_count",
+            "stock",
+            "in_stock",
+            "image_url",
+            "is_featured",
+        )
+
+
+class SellerProductSerializer(serializers.ModelSerializer):
+    """Create / edit serializer for the authenticated seller's own listings."""
+
+    category = serializers.SlugRelatedField(slug_field="slug", queryset=Category.objects.all())
+    brand = serializers.CharField(max_length=120)
+    image_url = serializers.URLField(required=False, allow_blank=True)
+    is_active = serializers.BooleanField(required=False, default=True)
+
+    class Meta:
+        model = Product
+        fields = (
+            "id",
+            "name",
+            "slug",
+            "description",
+            "category",
+            "brand",
+            "price",
+            "original_price",
+            "stock",
+            "image_url",
+            "is_active",
+            "rating",
+            "review_count",
+        )
+        read_only_fields = ("slug", "rating", "review_count")
+
+    def validate(self, attrs):
+        price = attrs.get("price", getattr(self.instance, "price", None))
+        original = attrs.get("original_price", getattr(self.instance, "original_price", None))
+        if price is not None and original is not None and price > original:
+            raise serializers.ValidationError(
+                {"price": "Price can't be higher than the original price."}
+            )
+        return attrs
+
+    @staticmethod
+    def _get_brand(name: str) -> Brand:
+        name = name.strip()
+        brand = Brand.objects.filter(name__iexact=name).first()
+        if brand is None:
+            brand = Brand.objects.create(name=name, slug=unique_slug(Brand, name, 140))
+        return brand
+
+    def create(self, validated_data):
+        validated_data["brand"] = self._get_brand(validated_data["brand"])
+        validated_data["slug"] = unique_slug(Product, validated_data["name"], 220)
+        validated_data["seller"] = self.context["request"].user
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if "brand" in validated_data:
+            validated_data["brand"] = self._get_brand(validated_data["brand"])
+        return super().update(instance, validated_data)
+
+========== backend\catalog\views.py ==========
+
+from django.db.models import Count, Q
+from django.http import HttpResponse
+from django.utils.html import escape
+from rest_framework import permissions, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from accounts.permissions import IsSeller
+
+from .filters import ProductFilter
+from .models import Category, Product
+from .serializers import CategorySerializer, ProductSerializer, SellerProductSerializer
+
+
+class ProductViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    GET /api/products/            list with search, filters, ordering, pagination
+    GET /api/products/featured/   top 12 featured products
+    GET /api/products/<slug>/     product detail
+
+    Query params: search, category, brand, min_price, max_price, in_stock,
+                  is_featured, ordering (price, -price, rating, -rating, -created_at), page
+    """
+
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = "slug"
+    filterset_class = ProductFilter
+    search_fields = ["name", "brand__name", "category__name", "description"]
+    ordering_fields = ["price", "rating", "review_count", "created_at"]
+
+    def get_queryset(self):
+        return Product.objects.filter(is_active=True).select_related(
+            "category", "brand", "seller__profile"
+        )
+
+    @action(detail=False, pagination_class=None)
+    def featured(self, request):
+        queryset = self.get_queryset().filter(is_featured=True).order_by("-rating")[:12]
+        return Response(self.get_serializer(queryset, many=True).data)
+
+
+class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """GET /api/categories/ â€” every category with its (active) product count."""
+
+    serializer_class = CategorySerializer
+    permission_classes = [permissions.AllowAny]
+    pagination_class = None
+    filter_backends = []
+
+    def get_queryset(self):
+        return Category.objects.annotate(
+            product_count=Count("products", filter=Q(products__is_active=True))
+        )
+
+
+class SellerProductViewSet(viewsets.ModelViewSet):
+    """
+    /api/seller/products/ â€” a seller manages only their own listings.
+    Deleting a product that already has orders just hides it.
+    """
+
+    serializer_class = SellerProductSerializer
+    permission_classes = [IsSeller]
+    pagination_class = None
+    filter_backends = []
+
+    def get_queryset(self):
+        return (
+            Product.objects.filter(seller=self.request.user)
+            .select_related("category", "brand")
+            .order_by("-created_at")
+        )
+
+    def perform_destroy(self, instance):
+        if instance.order_items.exists():
+            instance.is_active = False
+            instance.save(update_fields=["is_active", "updated_at"])
+        else:
+            instance.delete()
+
+
+def placeholder_image(request, label):
+    """GET /api/placeholder/<label>.svg -> generated SVG product image (no internet needed)."""
+    text = escape(label.replace("-", " ").replace("_", " "))[:30]
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#5b4bff"/><stop offset="1" stop-color="#151b2d"/></linearGradient></defs>
+<rect width="800" height="800" fill="url(#g)"/>
+<g fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+<path d="M250 300h300l-30 220H280z"/><path d="M320 300v-30a80 80 0 0 1 160 0v30"/></g>
+<text x="400" y="640" font-family="Arial,sans-serif" font-size="42" font-weight="700"
+fill="#fff" text-anchor="middle">{text}</text></svg>"""
+    response = HttpResponse(svg, content_type="image/svg+xml")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
+
+========== backend\catalog\urls.py ==========
+
+from django.urls import path
+from rest_framework.routers import DefaultRouter
+
+from .views import CategoryViewSet, ProductViewSet, SellerProductViewSet, placeholder_image
+
+router = DefaultRouter()
+router.register("products", ProductViewSet, basename="product")
+router.register("categories", CategoryViewSet, basename="category")
+router.register("seller/products", SellerProductViewSet, basename="seller-product")
+
+urlpatterns = [
+    path("placeholder/<str:label>.svg", placeholder_image),
+] + router.urls
+
+========== backend\catalog\management\commands\seed_products.py ==========
+
+import json
+from decimal import Decimal
+from pathlib import Path
+
+from django.core.management.base import BaseCommand
+from django.db import transaction
+from django.utils.text import slugify
+
+from catalog.models import Brand, Category, Product
+
+DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "products.json"
+
+
+class Command(BaseCommand):
+    help = "Load the 120 SmartCart products (safe to run more than once)."
+
+    @transaction.atomic
+    def handle(self, *args, **options):
+        items = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+        categories: dict[str, Category] = {}
+        brands: dict[str, Brand] = {}
+        created = 0
+
+        for item in items:
+            if item["category"] not in categories:
+                categories[item["category"]], _ = Category.objects.get_or_create(
+                    slug=slugify(item["category"]), defaults={"name": item["category"]}
+                )
+            if item["brand"] not in brands:
+                brands[item["brand"]], _ = Brand.objects.get_or_create(
+                    slug=slugify(item["brand"]), defaults={"name": item["brand"]}
+                )
+
+            _, was_created = Product.objects.update_or_create(
+                slug=slugify(item["name"]),
+                defaults={
+                    "name": item["name"],
+                    "category": categories[item["category"]],
+                    "brand": brands[item["brand"]],
+                    "description": item["description"],
+                    "price": Decimal(item["price"]),
+                    "original_price": Decimal(item["original_price"]),
+                    "rating": Decimal(item["rating"]),
+                    "review_count": item["review_count"],
+                    "stock": item["stock"],
+                    "image_url": f"/images/{slugify(item['category'])}.webp",
+                    "is_featured": item["is_featured"],
+                },
+            )
+            created += was_created
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Seeded {len(items)} products ({created} new, {len(items) - created} updated)."
+            )
+        )
+
+========== frontend\src\components\ProductImage.jsx ==========
+
+import { useEffect, useMemo, useState } from "react";
+
+const MANAGED_PHOTOS = {
+  audio: "/manus-storage/async-images/8ckabZATiz0RDt0enwupxA/image-1.webp",
+  laptops: "/manus-storage/async-images/8ckabZATiz0RDt0enwupxA/image-2.webp",
+  mobiles: "/manus-storage/async-images/8ckabZATiz0RDt0enwupxA/image-3.webp",
+  cameras: "/manus-storage/async-images/8ckabZATiz0RDt0enwupxA/image-4.webp",
+  gaming: "/manus-storage/async-images/8ckabZATiz0RDt0enwupxA/image-5.webp",
+  fashion: "/manus-storage/async-images/WcS6d33wk6hi6vreQPRNDb/image-1.webp",
+  home: "/manus-storage/async-images/WcS6d33wk6hi6vreQPRNDb/image-2.webp",
+  accessories: "/manus-storage/async-images/WcS6d33wk6hi6vreQPRNDb/image-3.webp",
+};
+
+const normalizeCategory = (value = "") =>
+  value.toLowerCase().replaceAll(" ", "-").replaceAll("&", "and");
+
+function getCandidates(product) {
+  const category = normalizeCategory(product.category_slug || product.category || "accessories");
+  const managed = MANAGED_PHOTOS[category];
+  const base = import.meta.env.BASE_URL || "/";
+  const local = `${base.replace(/\/$/, "")}/images/${category}.webp`;
+  const supplied = product.image_url || "";
+  const isPlaceholder = /placehold\.co|\/api\/placeholder\//i.test(supplied);
+  const isCategoryPath = /^\/?images\//.test(supplied);
+  const candidates = [];
+
+  // Seller-provided pictures take priority; seeded products use the generated photo first.
+  if (supplied && !isPlaceholder && !isCategoryPath) candidates.push(supplied);
+  if (managed) candidates.push(managed);
+  if (supplied && !isPlaceholder) candidates.push(supplied);
+  candidates.push(local);
+  return [...new Set(candidates)];
+}
+
+export default function ProductImage({ product, alt, ...props }) {
+  const candidates = useMemo(() => getCandidates(product || {}), [product]);
+  const [index, setIndex] = useState(0);
+  useEffect(() => setIndex(0), [candidates]);
+
+  const source = candidates[index];
+  return (
+    <img
+      {...props}
+      src={source}
+      alt={alt ?? product?.name ?? "Product"}
+      onError={(event) => {
+        props.onError?.(event);
+        setIndex((current) => Math.min(current + 1, candidates.length - 1));
+      }}
+    />
+  );
+}
+
+========== frontend\src\components\ProductCard.jsx ==========
+
+import { Heart, ShoppingBag, Star } from "lucide-react";
+import { Link } from "react-router-dom";
+
+import { useAuth } from "../context/AuthContext";
+import { useCart } from "../context/CartContext";
+import { formatINR } from "../utils/format";
+import ProductImage from "./ProductImage";
+
+export default function ProductCard({ product }) {
+  const { isSeller, isManagement } = useAuth();
+  const canShop = !isSeller && !isManagement;
+  const { addToCart, isWishlisted, toggleWishlist } = useCart();
+  const liked = isWishlisted(product.id);
+  const lowStock = product.stock < 10;
+
+  return (
+    <article className="product-card">
+      <div className="product-image">
+        <Link to={`/products/${product.slug}`} tabIndex={-1}>
+          <ProductImage product={product} alt={product.name} loading="lazy" />
+        </Link>
+        {product.discount_percent > 0 && <span className="discount">{product.discount_percent}% OFF</span>}
+        {canShop && (
+          <button
+            className={`wish ${liked ? "liked" : ""}`}
+            onClick={() => toggleWishlist(product)}
+            aria-label={liked ? "Remove from wishlist" : "Add to wishlist"}
+          >
+            <Heart size={18} fill={liked ? "currentColor" : "none"} />
+          </button>
+        )}
+      </div>
+
+      <div className="product-info">
+        <div className="eyebrow">
+          {product.brand} Â· {product.category}
+        </div>
+        <Link className="product-name" to={`/products/${product.slug}`}>
+          {product.name}
+        </Link>
+
+        <div className="rating">
+          <Star size={14} fill="currentColor" />
+          {product.rating}
+          <span>({product.review_count.toLocaleString("en-IN")})</span>
+        </div>
+
+        <div className="price-row">
+          <strong>{formatINR(product.price)}</strong>
+          <del>{formatINR(product.original_price)}</del>
+        </div>
+
+        <div className="card-bottom">
+          <span className={`stock ${lowStock ? "low" : ""}`}>
+            {product.stock === 0 ? "Out of stock" : lowStock ? `Only ${product.stock} left` : "In stock"}
+          </span>
+          {canShop && (
+            <button className="add-btn" disabled={product.stock === 0} onClick={() => addToCart(product)}>
+              <ShoppingBag size={15} />
+              Add
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+========== frontend\src\services\api.js ==========
+
+import axios from "axios";
+
+const TOKEN_KEY = "sc-access-token";
+const api = axios.create({ baseURL: "/api" });
+
+export const tokenStore = {
+  get: () => localStorage.getItem(TOKEN_KEY),
+  set: (token) => localStorage.setItem(TOKEN_KEY, token),
+  clear: () => localStorage.removeItem(TOKEN_KEY),
+};
+
+api.interceptors.request.use((config) => {
+  const token = tokenStore.get();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && tokenStore.get()) {
+      tokenStore.clear();
+      window.dispatchEvent(new Event("sc-auth-expired"));
+    }
+    return Promise.reject(error);
+  },
+);
+
+const get = async (url, params) => (await api.get(url, { params })).data;
+
+export const fetchProducts = (params = {}) => get("/products/", params);
+export const fetchFeatured = () => get("/products/featured/");
+export const fetchProduct = (slug) => get(`/products/${slug}/`);
+export const fetchCategories = () => get("/categories/");
+
+export const loginRequest = async (email, password) =>
+  (await api.post("/auth/login/", { username: email.trim().toLowerCase(), password })).data;
+
+export const registerRequest = async ({ fullName, email, password, role, companyName }) =>
+  (
+    await api.post("/auth/register/", {
+      full_name: fullName,
+      email,
+      password,
+      role,
+      company_name: companyName ?? "",
+    })
+  ).data;
+
+export const fetchMe = () => get("/auth/me/");
+
+export const createOrder = async (payload) =>
+  (await api.post("/orders/", payload)).data;
+export const fetchOrders = () => get("/orders/");
+export const fetchOrder = (id) => get(`/orders/${id}/`);
+export const cancelOrder = async (id) => (await api.post(`/orders/${id}/cancel/`)).data;
+
+export const fetchSellerStats = () => get("/seller/stats/");
+export const fetchSellerProducts = () => get("/seller/products/");
+export const createSellerProduct = async (data) => (await api.post("/seller/products/", data)).data;
+export const updateSellerProduct = async (id, data) =>
+  (await api.patch(`/seller/products/${id}/`, data)).data;
+export const deleteSellerProduct = (id) => api.delete(`/seller/products/${id}/`);
+export const fetchSellerOrders = () => get("/seller/orders/");
+export const updateSellerOrderStatus = async (id, status) =>
+  (await api.patch(`/seller/orders/${id}/`, { status })).data;
+
+export const fetchManagementReports = (days = 30) => get("/management/reports/", { days });
+
+function firstString(value) {
+  if (typeof value === "string") return value;
+  const children = Array.isArray(value) ? value : value && typeof value === "object" ? Object.values(value) : [];
+  for (const child of children) {
+    const found = firstString(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function errorMessage(error, fallback = "Something went wrong. Please try again.") {
+  if (!error?.isAxiosError) return error?.message || fallback;
+  const data = error.response?.data;
+  if (!data || typeof data === "string") return fallback;
+  return (typeof data.detail === "string" && data.detail) || firstString(data) || fallback;
+}
+
+export default api;

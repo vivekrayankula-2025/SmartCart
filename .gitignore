@@ -1,18 +1,25 @@
+# React
+node_modules/
+frontend/dist/
+frontend/build/
+
 # Python
-.venv/
 __pycache__/
 *.py[cod]
-*.sqlite3
-backend/.env
-backend/staticfiles/
-backend/frontend_dist/
+venv/
+.venv/
 
-# Node
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
+# Django
+.env
+.env.*
+!.env.example
+db.sqlite3
+staticfiles/
 
-# OS/editor artifacts
+# Editor
+.vscode/
+.idea/
+
+# System
 .DS_Store
 Thumbs.db
-*.log

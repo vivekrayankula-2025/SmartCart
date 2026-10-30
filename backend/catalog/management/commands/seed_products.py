@@ -8,7 +8,7 @@ from django.utils.text import slugify
 
 from catalog.models import Brand, Category, Product
 
-DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "products.json"
+DATA_FILE = Path(__file__).resolve().parents[2] / "products-with-images.json"
 
 
 class Command(BaseCommand):
@@ -43,7 +43,7 @@ class Command(BaseCommand):
                     "rating": Decimal(item["rating"]),
                     "review_count": item["review_count"],
                     "stock": item["stock"],
-                    "image_url": f"/images/{slugify(item['category'])}.webp",
+                    "image_url": item.get("image_url", ""),
                     "is_featured": item["is_featured"],
                 },
             )
