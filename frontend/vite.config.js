@@ -3,13 +3,12 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 const frontendDirectory = fileURLToPath(new URL(".", import.meta.url));
-const backendBuildDirectory = fileURLToPath(new URL("../backend/frontend_dist", import.meta.url));
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  base: mode === "production" ? "/static/" : "/",
+  base: mode === "production" ? "/" : "/",
   build: {
-    outDir: backendBuildDirectory,
+    outDir: "dist",
     emptyOutDir: true,
   },
   server: {
