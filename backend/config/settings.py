@@ -20,9 +20,9 @@ def env_list(name: str, default: str = "") -> list[str]:
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or secrets.token_urlsafe(48)
 DEBUG = env_bool("DJANGO_DEBUG", False)
-ALLOWED_HOSTS = env_list(
-    "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0,.manus.computer"
-)
+ALLOWED_HOSTS = [
+    "smartcart-jbb8.onrender.com",
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
