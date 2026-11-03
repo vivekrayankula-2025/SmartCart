@@ -1,5 +1,5 @@
-"""SmartCart Django settings for local SQLite and Vercel deployments."""
 
+"""SmartCart Django settings for Render backend and Vercel frontend."""
 
 import os
 import secrets
@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+
+# =========================================================
+# HELPER FUNCTIONS
+# =========================================================
 
 def env_bool(name: str, default: bool = False) -> bool:
     return os.getenv(name, str(int(default))).lower() in {
@@ -42,21 +46,10 @@ DEBUG = env_bool("DJANGO_DEBUG", False)
 # ALLOWED HOSTS
 # =========================================================
 
-# Read hosts from environment first.
 ALLOWED_HOSTS = env_list(
     "DJANGO_ALLOWED_HOSTS",
-    "localhost,127.0.0.1,0.0.0.0,.vercel.app,.onrender.com",
+    "localhost,127.0.0.1,0.0.0.0,.onrender.com",
 )
-
-# Vercel automatically provides VERCEL_URL for deployments.
-# Add it dynamically if available.
-vercel_url = os.getenv("VERCEL_URL", "").strip()
-
-if vercel_url:
-    # VERCEL_URL normally does not contain https://
-    vercel_url = vercel_url.replace("https://", "").replace("http://", "")
-    if vercel_url not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(vercel_url)
 
 
 # =========================================================
@@ -122,6 +115,7 @@ TEMPLATES = [
             "context_processors": [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
+                "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
             ],
         },
@@ -132,13 +126,6 @@ TEMPLATES = [
 # =========================================================
 # DATABASE
 # =========================================================
-
-# Production:
-#   Set DATABASE_URL in Vercel to use a hosted database.
-#
-# Local:
-#   If DATABASE_URL is not present and DB_ENGINE=sqlite,
-#   Django uses db.sqlite3.
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
@@ -166,24 +153,14 @@ if DATABASE_URL:
             "utf8mb4",
         )
 
-elif os.getenv("DB_ENGINE", "sqlite").lower() == "sqlite":
-
+else:
+    # Local development
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": os.getenv(
-                "SQLITE_PATH",
-                str(BASE_DIR / "db.sqlite3"),
-            ),
+            "NAME": BASE_DIR / "db.sqlite3",
         }
     }
-
-else:
-    from django.core.exceptions import ImproperlyConfigured
-
-    raise ImproperlyConfigured(
-        "Set DATABASE_URL or choose DB_ENGINE=sqlite."
-    )
 
 
 # =========================================================
@@ -234,11 +211,11 @@ STATICFILES_DIRS = [
 
 STORAGES = {
     "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage"
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
         "BACKEND":
-        "whitenoise.storage.CompressedManifestStaticFilesStorage"
+        "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 
@@ -256,10 +233,10 @@ CORS_ALLOWED_ORIGINS = env_list(
     "https://my-frontend-smartcart.vercel.app",
 )
 
-# Allow Vercel frontend preview/deployment URLs
+
+# Allow Vercel preview URLs
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://[a-zA-Z0-9.-]+\.vercel\.app$",
-    r"^https://[a-zA-Z0-9.-]+\.manus\.computer$",
 ]
 
 
@@ -286,73 +263,4 @@ CSRF_TRUSTED_ORIGINS = env_list(
     "http://localhost:3000,"
     "http://127.0.0.1:3000,"
     "http://localhost:5173,"
-    "http://127.0.0.1:5173,"
-    "https://my-frontend-smartcart.vercel.app",
-)
-
-# Allow Vercel preview URLs for CSRF
-CSRF_TRUSTED_ORIGINS += [
-    "https://*.vercel.app",
-]
-
-
-# =========================================================
-# FRAME OPTIONS
-# =========================================================
-
-X_FRAME_OPTIONS = "ALLOWALL"
-
-
-# =========================================================
-# STRIPE
-# =========================================================
-
-STRIPE_SECRET_KEY = os.getenv(
-    "STRIPE_SECRET_KEY",
-    ""
-)
-
-STRIPE_WEBHOOK_SECRET = os.getenv(
-    "STRIPE_WEBHOOK_SECRET",
-    ""
-)
-
-
-# =========================================================
-# DJANGO REST FRAMEWORK
-# =========================================================
-
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ],
-
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
-    ],
-
-    "DEFAULT_FILTER_BACKENDS": [
-        "django_filters.rest_framework.DjangoFilterBackend",
-        "rest_framework.filters.SearchFilter",
-        "rest_framework.filters.OrderingFilter",
-    ],
-
-    "DEFAULT_PAGINATION_CLASS": (
-        "rest_framework.pagination.PageNumberPagination"
-    ),
-
-    "PAGE_SIZE": 24,
-
-    "COERCE_DECIMAL_TO_STRING": False,
-}
-
-
-# =========================================================
-# JWT
-# =========================================================
-
-SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-}
-```
+    "http://127.0.0
