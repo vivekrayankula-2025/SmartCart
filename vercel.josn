@@ -1,3 +1,4 @@
+```json
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
@@ -13,9 +14,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": {
-        "service": "backend"
-      }
+      "destination": "https://my-backend-smartcart.vercel.app/api/$1"
     },
     {
       "source": "/(.*)",
@@ -25,3 +24,4 @@
     }
   ]
 }
+```
