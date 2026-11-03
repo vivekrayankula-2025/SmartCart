@@ -162,19 +162,19 @@ class ProductViewSet(viewsets.ViewSet):
             status=404
         )
 
-    @action(detail=False, methods=["get"], pagination_class=None)
-    def featured(self, request):
-        products = [
-            p for p in get_products()
-            if p.get("is_featured", False)
-        ]
+    @action(detail=False, methods=["get"])
+def featured(self, request):
+    products = [
+        p for p in get_products()
+        if p.get("is_featured", False)
+    ]
 
-        products.sort(
-            key=lambda p: float(p.get("rating", 0)),
-            reverse=True
-        )
+    products.sort(
+        key=lambda p: float(p.get("rating", 0)),
+        reverse=True
+    )
 
-        return Response(products[:12])
+    return Response(products[:12])
 
 
 class CategoryViewSet(viewsets.ViewSet):
