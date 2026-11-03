@@ -1,96 +1,231 @@
-from django.db.models import Count, Q
-from django.http import HttpResponse
-from django.utils.html import escape
+
+import json
+from pathlib import Path
+from decimal import Decimal, InvalidOperation
+
+from django.utils.text import slugify
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from accounts.permissions import IsSeller
 
-from .filters import ProductFilter
-from .models import Category, Product
-from .serializers import CategorySerializer, ProductSerializer, SellerProductSerializer
+# Read predefined products from products.json
+PRODUCTS_FILE = Path(__file__).resolve().parent / "products.json"
 
 
-class ProductViewSet(viewsets.ReadOnlyModelViewSet):
+def get_products():
+    try:
+        with open(PRODUCTS_FILE, "r", encoding="utf-8") as file:
+            products = json.load(file)
+
+        for index, product in enumerate(products, start=1):
+            product["id"] = index
+            product["slug"] = slugify(product["name"])
+            product["in_stock"] = int(product.get("stock", 0)) > 0
+
+            price = Decimal(str(product.get("price", 0)))
+            original_price = Decimal(str(product.get("original_price", 0)))
+
+            if original_price > 0:
+                product["discount_percent"] = round(
+                    (1 - price / original_price) * 100
+                )
+            else:
+                product["discount_percent"] = 0
+
+            product["seller_name"] = "SmartCart"
+
+        return products
+
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+class ProductViewSet(viewsets.ViewSet):
     """
-    GET /api/products/            list with search, filters, ordering, pagination
-    GET /api/products/featured/   top 12 featured products
-    GET /api/products/<slug>/     product detail
+    GET /api/products/
+    GET /api/products/featured/
+    GET /api/products/<slug>/
 
-    Query params: search, category, brand, min_price, max_price, in_stock,
-                  is_featured, ordering (price, -price, rating, -rating, -created_at), page
+    Supports:
+    search, category, brand, min_price, max_price,
+    in_stock, is_featured, ordering
     """
 
-    serializer_class = ProductSerializer
     permission_classes = [permissions.AllowAny]
     lookup_field = "slug"
-    filterset_class = ProductFilter
-    search_fields = ["name", "brand__name", "category__name", "description"]
-    ordering_fields = ["price", "rating", "review_count", "created_at"]
 
-    def get_queryset(self):
-        return Product.objects.filter(is_active=True).select_related(
-            "category", "brand", "seller__profile"
+    def list(self, request):
+        products = get_products()
+
+        search = request.query_params.get("search", "").lower()
+        category = request.query_params.get("category", "").lower()
+        brand = request.query_params.get("brand", "").lower()
+        min_price = request.query_params.get("min_price")
+        max_price = request.query_params.get("max_price")
+        in_stock = request.query_params.get("in_stock")
+        is_featured = request.query_params.get("is_featured")
+        ordering = request.query_params.get("ordering", "")
+
+        if search:
+            products = [
+                p for p in products
+                if search in p.get("name", "").lower()
+                or search in p.get("brand", "").lower()
+                or search in p.get("category", "").lower()
+                or search in p.get("description", "").lower()
+            ]
+
+        if category:
+            products = [
+                p for p in products
+                if p.get("category", "").lower() == category
+            ]
+
+        if brand:
+            products = [
+                p for p in products
+                if p.get("brand", "").lower() == brand
+            ]
+
+        try:
+            if min_price:
+                products = [
+                    p for p in products
+                    if Decimal(str(p.get("price", 0))) >= Decimal(min_price)
+                ]
+
+            if max_price:
+                products = [
+                    p for p in products
+                    if Decimal(str(p.get("price", 0))) <= Decimal(max_price)
+                ]
+        except InvalidOperation:
+            return Response({"error": "Invalid price filter."}, status=400)
+
+        if in_stock is not None:
+            wanted = in_stock.lower() == "true"
+            products = [p for p in products if p["in_stock"] == wanted]
+
+        if is_featured is not None:
+            wanted = is_featured.lower() == "true"
+            products = [
+                p for p in products
+                if p.get("is_featured", False) == wanted
+            ]
+
+        if ordering:
+            reverse = ordering.startswith("-")
+            field = ordering.lstrip("-")
+
+            allowed_fields = {
+                "price", "rating", "review_count", "name"
+            }
+
+            if field in allowed_fields:
+                products.sort(
+                    key=lambda p: (
+                        str(p.get(field, ""))
+                        if field == "name"
+                        else float(p.get(field, 0))
+                    ),
+                    reverse=reverse
+                )
+
+        # Simple pagination
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except ValueError:
+            page = 1
+
+        page_size = 12
+        total = len(products)
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        return Response({
+            "count": total,
+            "page": page,
+            "total_pages": (total + page_size - 1) // page_size,
+            "results": products[start:end]
+        })
+
+    def retrieve(self, request, slug=None):
+        products = get_products()
+
+        for product in products:
+            if product["slug"] == slug:
+                return Response(product)
+
+        return Response(
+            {"error": "Product not found."},
+            status=404
         )
 
-    @action(detail=False, pagination_class=None)
+    @action(detail=False, methods=["get"], pagination_class=None)
     def featured(self, request):
-        queryset = self.get_queryset().filter(is_featured=True).order_by("-rating")[:12]
-        return Response(self.get_serializer(queryset, many=True).data)
+        products = [
+            p for p in get_products()
+            if p.get("is_featured", False)
+        ]
+
+        products.sort(
+            key=lambda p: float(p.get("rating", 0)),
+            reverse=True
+        )
+
+        return Response(products[:12])
 
 
-class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
-    """GET /api/categories/ — every category with its (active) product count."""
+class CategoryViewSet(viewsets.ViewSet):
+    """
+    GET /api/categories/
+    GET /api/categories/<slug>/
+    """
 
-    serializer_class = CategorySerializer
     permission_classes = [permissions.AllowAny]
-    pagination_class = None
-    filter_backends = []
+    lookup_field = "slug"
 
-    def get_queryset(self):
-        return Category.objects.annotate(
-            product_count=Count("products", filter=Q(products__is_active=True))
+    def list(self, request):
+        products = get_products()
+        categories = {}
+
+        for product in products:
+            name = product.get("category", "Other")
+            categories[name] = categories.get(name, 0) + 1
+
+        result = [
+            {
+                "id": index,
+                "name": name,
+                "slug": slugify(name),
+                "product_count": count
+            }
+            for index, (name, count) in enumerate(
+                sorted(categories.items()), start=1
+            )
+        ]
+
+        return Response(result)
+
+    def retrieve(self, request, slug=None):
+        products = get_products()
+
+        for product in products:
+            if slugify(product.get("category", "")) == slug:
+                category_products = [
+                    p for p in products
+                    if p.get("category") == product.get("category")
+                ]
+
+                return Response({
+                    "name": product["category"],
+                    "slug": slug,
+                    "product_count": len(category_products),
+                    "products": category_products
+                })
+
+        return Response(
+            {"error": "Category not found."},
+            status=404
         )
-
-
-class SellerProductViewSet(viewsets.ModelViewSet):
-    """
-    /api/seller/products/ — a seller manages only their own listings.
-    Deleting a product that already has orders just hides it.
-    """
-
-    serializer_class = SellerProductSerializer
-    permission_classes = [IsSeller]
-    pagination_class = None
-    filter_backends = []
-
-    def get_queryset(self):
-        return (
-            Product.objects.filter(seller=self.request.user)
-            .select_related("category", "brand")
-            .order_by("-created_at")
-        )
-
-    def perform_destroy(self, instance):
-        if instance.order_items.exists():
-            instance.is_active = False
-            instance.save(update_fields=["is_active", "updated_at"])
-        else:
-            instance.delete()
-
-
-def placeholder_image(request, label):
-    """GET /api/placeholder/<label>.svg -> generated SVG product image (no internet needed)."""
-    text = escape(label.replace("-", " ").replace("_", " "))[:30]
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#5b4bff"/><stop offset="1" stop-color="#151b2d"/></linearGradient></defs>
-<rect width="800" height="800" fill="url(#g)"/>
-<g fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
-<path d="M250 300h300l-30 220H280z"/><path d="M320 300v-30a80 80 0 0 1 160 0v30"/></g>
-<text x="400" y="640" font-family="Arial,sans-serif" font-size="42" font-weight="700"
-fill="#fff" text-anchor="middle">{text}</text></svg>"""
-    response = HttpResponse(svg, content_type="image/svg+xml")
-    response["Cache-Control"] = "public, max-age=86400"
-    return response
