@@ -1,4 +1,3 @@
-```python
 
 """SmartCart Django settings for local SQLite and Vercel deployments."""
 
