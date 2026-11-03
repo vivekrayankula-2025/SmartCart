@@ -252,10 +252,8 @@ FRONTEND_ORIGIN_ALLOWLIST = env_list(
     "http://127.0.0.1:5173,"
     "https://my-frontend-smartcart.vercel.app",
 )
-
-
 # =========================================================
-# CSRF
+# CSRF TRUSTED ORIGINS
 # =========================================================
 
 CSRF_TRUSTED_ORIGINS = env_list(
@@ -263,4 +261,8 @@ CSRF_TRUSTED_ORIGINS = env_list(
     "http://localhost:3000,"
     "http://127.0.0.1:3000,"
     "http://localhost:5173,"
-    "http://127.0.0
+    "http://127.0.0.1:5173,"
+    "https://my-frontend-smartcart.vercel.app",
+)
+
+
