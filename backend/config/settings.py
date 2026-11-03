@@ -3,7 +3,6 @@
 
 import os
 import secrets
-from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -16,16 +15,13 @@ load_dotenv(BASE_DIR / ".env")
 # HELPER FUNCTIONS
 # =========================================================
 
-def env_bool(name: str, default: bool = False) -> bool:
+def env_bool(name, default=False):
     return os.getenv(name, str(int(default))).lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
+        "1", "true", "yes", "on"
     }
 
 
-def env_list(name: str, default: str = "") -> list[str]:
+def env_list(name, default=""):
     return [
         item.strip()
         for item in os.getenv(name, default).split(",")
@@ -40,11 +36,6 @@ def env_list(name: str, default: str = "") -> list[str]:
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or secrets.token_urlsafe(48)
 
 DEBUG = env_bool("DJANGO_DEBUG", False)
-
-
-# =========================================================
-# ALLOWED HOSTS
-# =========================================================
 
 ALLOWED_HOSTS = env_list(
     "DJANGO_ALLOWED_HOSTS",
@@ -109,12 +100,11 @@ ASGI_APPLICATION = "config.asgi.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "frontend_dist"],
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
             ],
@@ -123,31 +113,24 @@ TEMPLATES = [
 ]
 
 
-
-
-
 # =========================================================
-# GENERAL DJANGO SETTINGS
+# GENERAL SETTINGS
 # =========================================================
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME":
-        "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
     },
     {
-        "NAME":
-        "django.contrib.auth.password_validation.MinimumLengthValidator"
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"
     },
     {
-        "NAME":
-        "django.contrib.auth.password_validation.CommonPasswordValidator"
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"
     },
     {
-        "NAME":
-        "django.contrib.auth.password_validation.NumericPasswordValidator"
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"
     },
 ]
 
@@ -161,6 +144,15 @@ USE_TZ = True
 
 
 # =========================================================
+# DATABASE
+# =========================================================
+# No DATABASES configuration is included.
+# Product and category APIs should read from products.json.
+# Database-dependent features such as accounts and orders
+# will not work without a database.
+
+
+# =========================================================
 # STATIC FILES
 # =========================================================
 
@@ -168,17 +160,12 @@ STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STATICFILES_DIRS = [
-    BASE_DIR / "frontend_dist"
-]
-
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND":
-        "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 
@@ -196,8 +183,6 @@ CORS_ALLOWED_ORIGINS = env_list(
     "https://my-frontend-smartcart.vercel.app",
 )
 
-
-# Allow Vercel preview URLs
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://[a-zA-Z0-9.-]+\.vercel\.app$",
 ]
@@ -215,6 +200,8 @@ FRONTEND_ORIGIN_ALLOWLIST = env_list(
     "http://127.0.0.1:5173,"
     "https://my-frontend-smartcart.vercel.app",
 )
+
+
 # =========================================================
 # CSRF TRUSTED ORIGINS
 # =========================================================
@@ -227,5 +214,3 @@ CSRF_TRUSTED_ORIGINS = env_list(
     "http://127.0.0.1:5173,"
     "https://my-frontend-smartcart.vercel.app",
 )
-
-
